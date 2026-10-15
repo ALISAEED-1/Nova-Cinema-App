@@ -15,11 +15,10 @@ abstract final class AppConstants {
   static const int maxRecentSearches = 8;
 }
 
-/// Keys used with SharedPreferences. Mirrors the web app's localStorage keys
-/// (`novaUsers`, `novaUser`) so the data model stays recognisable.
+/// Keys used with SharedPreferences.
 abstract final class StorageKeys {
-  static const String users = 'novaUsers';
-  static const String session = 'novaUser';
+  /// The session token and a cached copy of the account from the backend.
+  static const String session = 'novaSession';
 
   /// Set once the user finishes (or skips) onboarding. Not per-user: the
   /// carousel runs before anyone signs in.

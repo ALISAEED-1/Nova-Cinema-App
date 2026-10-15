@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nova_cinema/app.dart';
+import 'package:nova_cinema/features/subscription/checkout_launcher.dart';
 import 'package:nova_cinema/services/catalog_service.dart';
 import 'package:nova_cinema/services/local_store.dart';
 import 'package:nova_cinema/services/onboarding_service.dart';
@@ -12,6 +13,8 @@ import 'package:nova_cinema/widgets/movie_card.dart';
 import 'package:nova_cinema/widgets/nova_logo.dart';
 import 'package:nova_cinema/widgets/user_avatar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'support/fake_nova_api.dart';
 
 /// Serves the real catalogue JSON from memory so the widget test does not
 /// depend on asynchronous asset I/O inside the fake-async test zone.
@@ -26,23 +29,48 @@ class _JsonBundle extends CachingAssetBundle {
 
 void main() {
   late String catalogJson;
+  late FakeNovaApi api;
+  late FakeCheckoutLauncher checkout;
 
   setUpAll(() {
     catalogJson = File('assets/data/catalog.json').readAsStringSync();
   });
 
-  Future<void> launch(WidgetTester tester) async {
-    SharedPreferences.setMockInitialValues({'novaOnboardingSeen': true});
+  setUp(() {
+    api = FakeNovaApi();
+    checkout = FakeCheckoutLauncher(api);
+  });
+
+  /// Starts the app with [prefs] as the device's saved state.
+  Future<void> pumpApp(
+    WidgetTester tester, {
+    Map<String, Object> prefs = const {'novaOnboardingSeen': true},
+    String? catalog,
+  }) async {
+    SharedPreferences.setMockInitialValues(prefs);
     final store = await LocalStore.open();
     await tester.pumpWidget(
       NovaCinemaApp(
         store: store,
-        catalogService: CatalogService(bundle: _JsonBundle(catalogJson)),
+        catalogService: CatalogService(bundle: _JsonBundle(catalog ?? catalogJson)),
+        api: api,
+        checkoutLauncher: checkout,
       ),
     );
     // Splash holds for 1.5s minimum.
     await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
+  }
+
+  Future<void> launch(WidgetTester tester) => pumpApp(tester);
+
+  /// Saved state for a signed-in user, optionally already subscribed.
+  Map<String, Object> signedIn({String? planId, String country = 'US'}) {
+    api.seedAccount(email: 'ali@example.com', planId: planId, country: country);
+    return {
+      'novaOnboardingSeen': true,
+      'novaSession': api.sessionJsonFor('ali@example.com'),
+    };
   }
 
   Finder navItem(String label) => find.widgetWithText(InkResponse, label);
@@ -66,13 +94,18 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Sign Up'));
     await tester.pumpAndSettle();
 
-    // Registering signs the account in and goes straight to plan selection.
+    // Registering signs the account in and goes straight to plan selection,
+    // with prices from the server in the account's currency.
     expect(find.text('Choose your plan'), findsOneWidget);
+    expect(find.text(r'$19.99 /month', findRichText: true), findsOneWidget);
 
+    // Paying opens the provider's checkout; the plan unlocks once the
+    // server reports the session paid.
     await tester.tap(find.text('Premium'));
     await tester.pumpAndSettle();
-    await tester.tap(find.textContaining('Continue with Premium'));
+    await tester.tap(find.textContaining(r'Continue with Premium · $19.99/mo'));
     await tester.pumpAndSettle();
+    expect(checkout.opened, 1);
 
     // --- Home -----------------------------------------------------------
     expect(find.text('Trending Now'), findsOneWidget);
@@ -166,45 +199,79 @@ void main() {
   });
 
   testWidgets('restored session skips sign-in', (tester) async {
-    SharedPreferences.setMockInitialValues({
-      'novaOnboardingSeen': true,
-      'novaUsers': jsonEncode({
-        'ali@example.com': {'name': 'Ali', 'password': 'secret123', 'plan': 'basic'},
-      }),
-      'novaUser': jsonEncode(
-        {'name': 'Ali', 'email': 'ali@example.com', 'plan': 'basic'},
-      ),
-    });
-    final store = await LocalStore.open();
-    await tester.pumpWidget(
-      NovaCinemaApp(
-        store: store,
-        catalogService: CatalogService(bundle: _JsonBundle(catalogJson)),
-      ),
-    );
-    await tester.pump(const Duration(seconds: 2));
-    await tester.pumpAndSettle();
+    await pumpApp(tester, prefs: signedIn(planId: 'basic'));
 
     expect(find.text('Welcome back'), findsNothing);
     expect(find.text('Trending Now'), findsOneWidget);
   });
 
-  testWidgets('catalogue failure shows a retryable error', (tester) async {
-    SharedPreferences.setMockInitialValues({
+  testWidgets('a session saved by the old local-only app signs out cleanly',
+      (tester) async {
+    await pumpApp(tester, prefs: {
       'novaOnboardingSeen': true,
       'novaUser': jsonEncode(
         {'name': 'Ali', 'email': 'ali@example.com', 'plan': 'basic'},
       ),
     });
-    final store = await LocalStore.open();
-    await tester.pumpWidget(
-      NovaCinemaApp(
-        store: store,
-        catalogService: CatalogService(bundle: _JsonBundle('not json')),
-      ),
+    expect(find.text('Welcome back'), findsOneWidget);
+  });
+
+  testWidgets('a declined card keeps the user on the plan screen',
+      (tester) async {
+    await pumpApp(tester, prefs: signedIn(country: 'PK'));
+    expect(find.text('Choose your plan'), findsOneWidget);
+    expect(
+      find.text('Rs 899 /month', findRichText: true),
+      findsOneWidget,
+      reason: 'priced in PKR',
     );
-    await tester.pump(const Duration(seconds: 2));
+
+    checkout.declineCard = true;
+    await tester.tap(find.textContaining('Continue with Standard'));
     await tester.pumpAndSettle();
+
+    expect(find.textContaining('Your card was declined'), findsOneWidget);
+    expect(find.text('Choose your plan'), findsOneWidget);
+
+    // A second try with a working card goes through, once the message that
+    // covers the button has gone.
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+    checkout.declineCard = false;
+    await tester.tap(find.textContaining('Continue with Standard'));
+    await tester.pumpAndSettle();
+    expect(find.text('Trending Now'), findsOneWidget);
+    expect(checkout.opened, 2);
+  });
+
+  testWidgets('changing the billing country reprices the plans',
+      (tester) async {
+    await pumpApp(tester, prefs: signedIn());
+    expect(find.text('Billing country: United States · USD'), findsOneWidget);
+
+    await tester.tap(find.text('Billing country: United States · USD'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Pakistan'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Billing country: Pakistan · PKR'), findsOneWidget);
+    expect(find.text('Rs 899 /month', findRichText: true), findsOneWidget);
+    expect(find.textContaining('Continue with Standard · Rs 899/mo'), findsOneWidget);
+  });
+
+  testWidgets('canceling checkout charges nothing', (tester) async {
+    await pumpApp(tester, prefs: signedIn());
+
+    checkout.nextReturn = CheckoutReturn.canceled;
+    await tester.tap(find.textContaining('Continue with Standard'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Checkout canceled'), findsOneWidget);
+    expect(find.text('Choose your plan'), findsOneWidget);
+  });
+
+  testWidgets('catalogue failure shows a retryable error', (tester) async {
+    await pumpApp(tester, prefs: signedIn(planId: 'basic'), catalog: 'not json');
 
     expect(find.text('Couldn’t load the catalogue'), findsOneWidget);
     expect(find.text('Try again'), findsOneWidget);
@@ -212,16 +279,7 @@ void main() {
 
   testWidgets('first launch runs onboarding, then hands off to sign-up',
       (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    final store = await LocalStore.open();
-    await tester.pumpWidget(
-      NovaCinemaApp(
-        store: store,
-        catalogService: CatalogService(bundle: _JsonBundle(catalogJson)),
-      ),
-    );
-    await tester.pump(const Duration(seconds: 2));
-    await tester.pumpAndSettle();
+    await pumpApp(tester, prefs: {});
 
     // Slide 1
     expect(find.text('01 / 03'), findsOneWidget);
@@ -257,16 +315,7 @@ void main() {
   });
 
   testWidgets('Skip leaves onboarding immediately', (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    final store = await LocalStore.open();
-    await tester.pumpWidget(
-      NovaCinemaApp(
-        store: store,
-        catalogService: CatalogService(bundle: _JsonBundle(catalogJson)),
-      ),
-    );
-    await tester.pump(const Duration(seconds: 2));
-    await tester.pumpAndSettle();
+    await pumpApp(tester, prefs: {});
 
     expect(find.text('01 / 03'), findsOneWidget);
     await tester.tap(find.text('Skip'));
@@ -277,21 +326,8 @@ void main() {
   });
 
   testWidgets('a wrong password is rejected at sign-in', (tester) async {
-    SharedPreferences.setMockInitialValues({
-      'novaOnboardingSeen': true,
-      'novaUsers': jsonEncode({
-        'ali@example.com': {'name': 'Ali', 'password': 'secret123'},
-      }),
-    });
-    final store = await LocalStore.open();
-    await tester.pumpWidget(
-      NovaCinemaApp(
-        store: store,
-        catalogService: CatalogService(bundle: _JsonBundle(catalogJson)),
-      ),
-    );
-    await tester.pump(const Duration(seconds: 2));
-    await tester.pumpAndSettle();
+    api.seedAccount(email: 'ali@example.com');
+    await pumpApp(tester);
 
     expect(find.text('Welcome back'), findsOneWidget);
     final fields = find.byType(TextFormField);
@@ -311,21 +347,7 @@ void main() {
 
   testWidgets('home chrome retracts scrolling down and returns scrolling up',
       (tester) async {
-    SharedPreferences.setMockInitialValues({
-      'novaOnboardingSeen': true,
-      'novaUser': jsonEncode(
-        {'name': 'Ali', 'email': 'ali@example.com', 'plan': 'basic'},
-      ),
-    });
-    final store = await LocalStore.open();
-    await tester.pumpWidget(
-      NovaCinemaApp(
-        store: store,
-        catalogService: CatalogService(bundle: _JsonBundle(catalogJson)),
-      ),
-    );
-    await tester.pump(const Duration(seconds: 2));
-    await tester.pumpAndSettle();
+    await pumpApp(tester, prefs: signedIn(planId: 'basic'));
 
     // The wordmark and the action buttons ride in their own AnimatedSlide,
     // leaving in opposite directions.

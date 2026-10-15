@@ -1,68 +1,77 @@
-/// Subscription tiers from the web app's `subscription.html`.
+import 'money.dart';
+
+/// A plan as offered by the nova-pay backend, priced in the user's currency.
 class SubscriptionPlan {
   const SubscriptionPlan({
     required this.id,
     required this.name,
-    required this.monthlyPrice,
     required this.quality,
     required this.features,
+    required this.price,
     this.badge,
   });
 
   final String id;
   final String name;
-  final double monthlyPrice;
   final String quality;
   final List<String> features;
+  final Money price;
   final String? badge;
 
-  static const List<SubscriptionPlan> all = [
-    SubscriptionPlan(
-      id: 'basic',
-      name: 'Basic',
-      monthlyPrice: 9.99,
-      quality: 'HD',
-      features: [
-        'HD (720p) quality',
-        'Watch on 1 device at a time',
-        'Watch on your laptop, TV, phone and tablet',
-        'Unlimited movies and TV shows',
-      ],
-    ),
-    SubscriptionPlan(
-      id: 'standard',
-      name: 'Standard',
-      monthlyPrice: 14.99,
-      quality: 'Full HD',
-      badge: 'Most Popular',
-      features: [
-        'Full HD (1080p) quality',
-        'Watch on 2 devices at a time',
-        'Watch on your laptop, TV, phone and tablet',
-        'Unlimited movies and TV shows',
-        'Download on 2 devices',
-      ],
-    ),
-    SubscriptionPlan(
-      id: 'premium',
-      name: 'Premium',
-      monthlyPrice: 19.99,
-      quality: '4K + HDR',
-      features: [
-        '4K (Ultra HD) + HDR quality',
-        'Watch on 4 devices at a time',
-        'Watch on your laptop, TV, phone and tablet',
-        'Unlimited movies and TV shows',
-        'Download on 4 devices',
-        'Nova Cinema spatial audio',
-      ],
-    ),
-  ];
+  factory SubscriptionPlan.fromJson(Map<String, dynamic> json) =>
+      SubscriptionPlan(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        quality: json['quality'] as String,
+        features: (json['features'] as List).cast<String>(),
+        price: Money.fromJson(json['price'] as Map<String, dynamic>),
+        badge: json['badge'] as String?,
+      );
+}
 
-  static SubscriptionPlan? byId(String? id) {
-    for (final p in all) {
+/// The plans on offer for the user's billing country.
+class PlanCatalog {
+  const PlanCatalog({
+    required this.country,
+    required this.currency,
+    required this.plans,
+  });
+
+  final String country;
+  final String currency;
+  final List<SubscriptionPlan> plans;
+
+  SubscriptionPlan? byId(String? id) {
+    for (final p in plans) {
       if (p.id == id) return p;
     }
     return null;
   }
+
+  factory PlanCatalog.fromJson(Map<String, dynamic> json) => PlanCatalog(
+        country: json['country'] as String,
+        currency: json['currency'] as String,
+        plans: (json['plans'] as List)
+            .map((p) => SubscriptionPlan.fromJson(p as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
+/// A country the user can bill from, with the currency it implies.
+class BillingCountry {
+  const BillingCountry({
+    required this.code,
+    required this.name,
+    required this.currency,
+  });
+
+  final String code;
+  final String name;
+  final String currency;
+
+  factory BillingCountry.fromJson(Map<String, dynamic> json) => BillingCountry(
+        code: json['country'] as String,
+        name: json['name'] as String,
+        currency: json['currency'] as String,
+      );
 }

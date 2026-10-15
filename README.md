@@ -13,9 +13,31 @@ flutter run -d chrome       # quick look in a browser
 flutter build apk --release # android/app/build/outputs/... → build/app/outputs/flutter-apk/app-release.apk
 ```
 
-Requirements: Flutter 3.32+ (Dart 3.8+), Android SDK for APK builds. No API keys,
-environment variables or backend services are needed — the original project is
-fully client-side and so is this app.
+Requirements: Flutter 3.32+ (Dart 3.8+), Android SDK for APK builds.
+
+### Backend
+
+Accounts, plans and payments come from **nova-pay**, the payment backend. Run it,
+then let a USB-connected phone reach it:
+
+```bash
+adb reverse tcp:4000 tcp:4000   # phone's localhost:4000 → this computer
+flutter run
+```
+
+The app calls `http://localhost:4000` by default. Change it with
+`--dart-define=API_BASE_URL=...`, e.g. `http://10.0.2.2:4000` on the Android emulator.
+
+### How paying works
+
+1. The plan screen loads plans priced in the account's currency ($, €, Rs, ₹, Tk).
+   The billing-country chip switches it.
+2. **Continue** asks nova-pay for a checkout session, sending an idempotency key
+   so a retry can never create a second charge.
+3. The provider's hosted checkout page opens in a web view. Card details go to
+   the provider, never to the app.
+4. When the provider redirects back, the app asks nova-pay for the outcome. The
+   plan unlocks only when the provider's webhook has marked the session paid.
 
 ## Architecture
 
@@ -28,8 +50,9 @@ lib/
     theme/                  colours, spacing/radius/durations, ThemeData
     utils/                  debouncer, formatters, validators, responsive
   models/                   Movie, Catalog, AppUser, SubscriptionPlan, PlaybackProgress…
-  services/                 CatalogService, AuthService, WatchlistService,
+  services/                 CatalogService, AuthService, BillingService, WatchlistService,
                             PlaybackService, SearchHistoryService, LocalStore
+    api/                    NovaApi (backend interface) and its HTTP implementation
   features/
     splash/  auth/  subscription/  home/  search/  movie_details/
     player/  watchlist/  profile/     (screen + ChangeNotifier per feature)
@@ -53,9 +76,10 @@ thin.
 The website kept its movie data inline in each HTML page. That data has been merged
 into `assets/data/catalog.json` and is loaded through `CatalogService`, so the UI
 never touches the source directly and a remote API can replace the asset without UI
-changes. Accounts, session, watchlist, playback progress, recent searches and
-playback preferences are stored with `shared_preferences` — the mobile counterpart
-of the website's `localStorage`, using the same `novaUsers` / `novaUser` keys.
+changes. Accounts and subscriptions live on the nova-pay backend; the app keeps
+the session token and a cached copy of the account so it opens signed in. The
+watchlist, playback progress, recent searches and playback preferences stay on
+the device with `shared_preferences`.
 
 ## Packages
 
@@ -65,3 +89,5 @@ of the website's `localStorage`, using the same `novaUsers` / `novaUser` keys.
 | `video_player`       | native playback (ExoPlayer / AVPlayer) of the bundled MP4s |
 | `shared_preferences` | on-device persistence, mirrors the web `localStorage`      |
 | `wakelock_plus`      | keeps the screen on while a movie is playing               |
+| `http`               | talks to the nova-pay backend                              |
+| `webview_flutter`    | shows the payment provider's hosted checkout page          |

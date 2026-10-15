@@ -17,6 +17,10 @@ dependencies:
   shared_preferences: ^2.3.4
   # Keeps the screen awake while a movie is playing.
   wakelock_plus: ^1.2.10
+  # Talks to the nova-pay backend (accounts, plans, checkout).
+  http: ^1.6.0
+  # Shows the payment provider's hosted checkout page inside the app.
+  webview_flutter: ^4.13.1
 
 dev_dependencies:
   flutter_test:

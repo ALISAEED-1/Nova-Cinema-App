@@ -28,5 +28,14 @@ abstract final class Formatters {
     return parts.take(2).map((p) => p[0].toUpperCase()).join();
   }
 
-  static String price(double value) => '\$${value.toStringAsFixed(2)}';
+  static const _months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  /// "15 Nov 2026", in the device's time zone.
+  static String date(DateTime d) {
+    final local = d.toLocal();
+    return '${local.day} ${_months[local.month - 1]} ${local.year}';
+  }
 }

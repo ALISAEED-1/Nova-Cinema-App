@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../models/app_user.dart';
+import '../../services/api/nova_api.dart';
 import '../../services/auth_service.dart';
 
 enum AuthStatus { unknown, authenticated, unauthenticated }
@@ -22,14 +25,34 @@ class AuthController extends ChangeNotifier {
   String? get error => _error;
   bool get isAuthenticated => _status == AuthStatus.authenticated;
 
-  /// True right after sign-in until the user has chosen a plan.
-  bool get needsPlan => _user != null && _user!.planId == null;
+  /// True while the signed-in user has no active paid plan.
+  bool get needsPlan => _user != null && !_user!.hasActivePlan;
 
+  /// Opens with the cached account, then refreshes it from the server in the
+  /// background.
   void restoreSession() {
     _user = _service.currentUser();
     _status =
         _user == null ? AuthStatus.unauthenticated : AuthStatus.authenticated;
     notifyListeners();
+    if (_user != null) unawaited(refreshAccount());
+  }
+
+  /// Pulls the latest account (plan, renewal date) from the server. Keeps the
+  /// cached copy when offline; signs out if the server rejects the session.
+  Future<void> refreshAccount() async {
+    try {
+      final fresh = await _service.refresh();
+      if (fresh == null) {
+        _user = null;
+        _status = AuthStatus.unauthenticated;
+      } else {
+        _user = fresh;
+      }
+      notifyListeners();
+    } on ApiException {
+      // Offline or server down: the cached account stays in use.
+    }
   }
 
   void clearError() {
@@ -52,8 +75,12 @@ class AuthController extends ChangeNotifier {
     required String password,
   }) =>
       _run(() async {
-        await _service.register(name: name, email: email, password: password);
-        _user = await _service.login(email: email, password: password);
+        _user = await _service.register(
+          name: name,
+          email: email,
+          password: password,
+          country: _deviceCountry(),
+        );
         _status = AuthStatus.authenticated;
       });
 
@@ -66,16 +93,13 @@ class AuthController extends ChangeNotifier {
   }
 
   Future<void> updateName(String name) async {
-    final current = _user;
-    if (current == null) return;
-    _user = await _service.updateUser(current.copyWith(name: name.trim()));
+    _user = await _service.updateAccount(name: name.trim());
     notifyListeners();
   }
 
-  Future<void> selectPlan(String planId) async {
-    final current = _user;
-    if (current == null) return;
-    _user = await _service.updateUser(current.copyWith(planId: planId));
+  /// Changes the billing country, which changes the currency plans are priced in.
+  Future<void> updateCountry(String country) async {
+    _user = await _service.updateAccount(country: country);
     notifyListeners();
   }
 
@@ -86,7 +110,7 @@ class AuthController extends ChangeNotifier {
     try {
       await action();
       return true;
-    } on AuthException catch (e) {
+    } on ApiException catch (e) {
       _error = e.message;
       return false;
     } catch (_) {
@@ -97,4 +121,8 @@ class AuthController extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  /// Starting guess for the billing country; the plan screen lets the user change it.
+  static String _deviceCountry() =>
+      PlatformDispatcher.instance.locale.countryCode?.toUpperCase() ?? 'US';
 }

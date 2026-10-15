@@ -5,9 +5,10 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/validators.dart';
+import '../../models/app_user.dart';
 import '../../models/movie.dart';
-import '../../models/subscription_plan.dart';
 import '../../navigation/app_router.dart';
+import '../../services/api/nova_api.dart';
 import '../../widgets/app_snackbar.dart';
 import '../../widgets/movie_section.dart';
 import '../../widgets/user_avatar.dart';
@@ -62,7 +63,12 @@ class ProfileScreen extends StatelessWidget {
     );
     controller.dispose();
     if (name == null || !context.mounted) return;
-    await auth.updateName(name);
+    try {
+      await auth.updateName(name);
+    } on ApiException catch (e) {
+      if (context.mounted) showAppSnackBar(context, e.message, isError: true);
+      return;
+    }
     if (context.mounted) {
       showAppSnackBar(context, 'Name updated', icon: Icons.check_rounded);
     }
@@ -74,7 +80,8 @@ class ProfileScreen extends StatelessWidget {
       builder: (dialog) => AlertDialog(
         title: const Text('Sign out?'),
         content: const Text(
-          'Your list and progress stay saved on this device for next time.',
+          'Your list and progress stay saved on this device, and your plan '
+          'stays with your account.',
         ),
         actions: [
           TextButton(
@@ -104,7 +111,7 @@ class ProfileScreen extends StatelessWidget {
     final text = Theme.of(context).textTheme;
 
     final user = auth.user;
-    final plan = SubscriptionPlan.byId(user?.planId);
+    final plan = user?.hasActivePlan == true ? user!.subscription : null;
     final continueWatching = playback.continueWatching
         .map((p) => catalog.byId(p.movieId))
         .whereType<Movie>()
@@ -225,10 +232,12 @@ class ProfileScreen extends StatelessWidget {
               children: [
                 _SettingsRow(
                   icon: Icons.workspace_premium_outlined,
-                  title: plan == null ? 'No plan selected' : '${plan.name} plan',
+                  title:
+                      plan == null ? 'No plan selected' : '${plan.planName} plan',
                   subtitle: plan == null
                       ? 'Choose a plan to start watching'
-                      : '${Formatters.price(plan.monthlyPrice)}/month • ${plan.quality}',
+                      : '${plan.price.formatted}/month • ${plan.quality} • '
+                          'Renews ${Formatters.date(plan.currentPeriodEnd)}',
                   trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () => Navigator.of(context).pushNamed(
                     AppRoutes.plans,
@@ -291,7 +300,7 @@ class ProfileScreen extends StatelessWidget {
 class _PlanPill extends StatelessWidget {
   const _PlanPill({required this.plan});
 
-  final SubscriptionPlan? plan;
+  final UserSubscription? plan;
 
   @override
   Widget build(BuildContext context) {
@@ -306,7 +315,7 @@ class _PlanPill extends StatelessWidget {
         ),
       ),
       child: Text(
-        active ? '${plan!.name} • ${plan!.quality}' : 'No plan',
+        active ? '${plan!.planName} • ${plan!.quality}' : 'No plan',
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w700,
