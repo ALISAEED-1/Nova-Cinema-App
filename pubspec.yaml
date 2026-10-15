@@ -1,0 +1,49 @@
+name: nova_cinema
+description: "Nova Cinema — a cinematic, mobile-first movie streaming app."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.8.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Lightweight ChangeNotifier-based state management.
+  provider: ^6.1.2
+  # Native video playback (ExoPlayer / AVPlayer) for the bundled MP4 sources.
+  video_player: ^2.9.5
+  # Local persistence — the mobile equivalent of the web app's localStorage.
+  shared_preferences: ^2.3.4
+  # Keeps the screen awake while a movie is playing.
+  wakelock_plus: ^1.2.10
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/data/
+    - assets/images/
+    - assets/images/onboarding/
+    - assets/videos/
+
+  fonts:
+    - family: Outfit
+      fonts:
+        - asset: assets/fonts/Outfit-Light.ttf
+          weight: 300
+        - asset: assets/fonts/Outfit-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Outfit-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Outfit-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Outfit-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Outfit-Black.ttf
+          weight: 900
