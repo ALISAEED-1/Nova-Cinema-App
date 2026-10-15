@@ -106,6 +106,25 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Stops the plan renewing; it keeps working until the period ends.
+  Future<void> cancelPlan() =>
+      _changeAccount((api, token) => api.cancelSubscription(token));
+
+  /// Takes back a cancellation while the period is still running.
+  Future<void> resumePlan() =>
+      _changeAccount((api, token) => api.resumeSubscription(token));
+
+  /// Development servers only: moves this account's billing clock forward.
+  Future<void> skipAhead(int days) =>
+      _changeAccount((api, token) => api.advanceClock(token, days));
+
+  Future<void> _changeAccount(
+    Future<AppUser> Function(NovaApi api, String token) call,
+  ) async {
+    _user = await _service.changeAccount(call);
+    notifyListeners();
+  }
+
   Future<bool> _run(Future<void> Function() action) async {
     _busy = true;
     _error = null;

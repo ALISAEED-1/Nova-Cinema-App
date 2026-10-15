@@ -27,7 +27,8 @@ class _CheckoutWebViewScreenState extends State<CheckoutWebViewScreen> {
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.white)
+      // The app's background, so there is no white flash while the page loads.
+      ..setBackgroundColor(AppColors.background)
       ..setNavigationDelegate(
         NavigationDelegate(
           onProgress: (p) {

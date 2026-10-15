@@ -13,7 +13,8 @@ class AuthService {
   final NovaApi _api;
 
   /// Bearer token for the signed-in user, or null.
-  String? get token => _store.readJson(StorageKeys.session)?['token'] as String?;
+  String? get token =>
+      _store.readJson(StorageKeys.session)?['token'] as String?;
 
   /// The cached account, if a session exists.
   AppUser? currentUser() {
@@ -34,19 +35,19 @@ class AuthService {
     required String email,
     required String password,
     required String country,
-  }) async =>
-      _save(await _api.register(
-        name: name.trim(),
-        email: email.trim(),
-        password: password,
-        country: country,
-      ));
+  }) async => _save(
+    await _api.register(
+      name: name.trim(),
+      email: email.trim(),
+      password: password,
+      country: country,
+    ),
+  );
 
   Future<AppUser> login({
     required String email,
     required String password,
-  }) async =>
-      _save(await _api.login(email: email.trim(), password: password));
+  }) async => _save(await _api.login(email: email.trim(), password: password));
 
   /// Fetches the latest account from the server. Returns null and clears the
   /// session when the server no longer accepts the token.
@@ -68,6 +69,15 @@ class AuthService {
       token,
       await _api.updateAccount(token, name: name, country: country),
     );
+  }
+
+  /// Runs an account-changing call ([cancel], [resume], …) and caches the
+  /// account the server returns.
+  Future<AppUser> changeAccount(
+    Future<AppUser> Function(NovaApi api, String token) call,
+  ) async {
+    final token = _requireToken();
+    return _cache(token, await call(_api, token));
   }
 
   Future<void> logout() => _store.remove(StorageKeys.session);

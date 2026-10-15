@@ -23,6 +23,7 @@ class _Account {
   String country;
   Map<String, dynamic>? subscription;
   final rentals = <Map<String, dynamic>>[];
+  final invoices = <Map<String, dynamic>>[];
 }
 
 class _Session {
@@ -82,6 +83,31 @@ class FakeNovaApi implements NovaApi {
     return _issueToken(account);
   }
 
+  /// Puts a subscriber in the state after a declined renewal: past due, still
+  /// watching through the grace period, with the bill open.
+  void makePastDue(String email) {
+    final account = _accounts[email]!;
+    final sub = account.subscription!;
+    final now = DateTime.now().toUtc();
+    final invoice = {
+      'id': 'inv_${_ids++}',
+      'status': 'open',
+      'collection': 'automatic',
+      'amount': sub['price'],
+      'periodStart': now.subtract(const Duration(minutes: 1)).toIso8601String(),
+      'periodEnd': now.add(const Duration(days: 30)).toIso8601String(),
+      'attemptCount': 1,
+      'lastError': 'insufficient_funds',
+      'nextAttemptAt': now.add(const Duration(days: 1)).toIso8601String(),
+      'paidAt': null,
+    };
+    account.invoices.add(invoice);
+    sub
+      ..['status'] = 'past_due'
+      ..['graceUntil'] = now.add(const Duration(days: 7)).toIso8601String()
+      ..['openInvoice'] = invoice;
+  }
+
   /// SharedPreferences value for a signed-in session, as the app stores it.
   String sessionJsonFor(String email) {
     final account = _accounts[email]!;
@@ -104,6 +130,20 @@ class FakeNovaApi implements NovaApi {
             .toUtc()
             .toIso8601String(),
       });
+    } else if (paid && session.json['kind'] == 'renewal') {
+      final invoice = account.invoices.firstWhere(
+        (i) => i['id'] == session.json['invoiceId'],
+      );
+      invoice
+        ..['status'] = 'paid'
+        ..['paidAt'] = DateTime.now().toUtc().toIso8601String();
+      account.subscription!
+        ..['status'] = 'active'
+        ..['hasAccess'] = true
+        ..['graceUntil'] = null
+        ..['openInvoice'] = null
+        ..['paymentMethod'] = 'Visa •••• 4242'
+        ..['currentPeriodEnd'] = invoice['periodEnd'];
     } else if (paid) {
       _subscribe(account, session.json['planId'] as String);
     } else {
@@ -312,13 +352,72 @@ class FakeNovaApi implements NovaApi {
       'planName': name,
       'quality': quality,
       'status': 'active',
+      'hasAccess': true,
       'price': _price(_currencyOf(account), planId),
       'currentPeriodEnd': DateTime.now()
           .add(const Duration(days: 30))
           .toUtc()
           .toIso8601String(),
+      'cancelAtPeriodEnd': false,
+      'graceUntil': null,
+      'endedReason': null,
+      'renewal': 'automatic',
+      'paymentMethod': 'Visa •••• 4242',
+      'openInvoice': null,
     };
   }
+
+  @override
+  Future<CheckoutSession> createRenewalCheckout(
+    String token, {
+    required String invoiceId,
+    required String idempotencyKey,
+  }) async {
+    final account = _auth(token);
+    final invoice = account.invoices.firstWhere(
+      (i) => i['id'] == invoiceId,
+      orElse: () =>
+          throw const ApiException('Invoice not found', statusCode: 404),
+    );
+    return _createSession(account, idempotencyKey, {
+      'kind': 'renewal',
+      'planId': account.subscription!['planId'],
+      'invoiceId': invoiceId,
+      'amount': invoice['amount'],
+    });
+  }
+
+  @override
+  Future<AppUser> cancelSubscription(String token) async {
+    final account = _auth(token);
+    final sub = account.subscription!;
+    if (sub['status'] == 'past_due') {
+      sub
+        ..['status'] = 'canceled'
+        ..['hasAccess'] = false
+        ..['endedReason'] = 'canceled'
+        ..['openInvoice'] = null;
+    } else {
+      sub['cancelAtPeriodEnd'] = true;
+    }
+    return _user(account);
+  }
+
+  @override
+  Future<AppUser> resumeSubscription(String token) async {
+    final account = _auth(token);
+    account.subscription!['cancelAtPeriodEnd'] = false;
+    return _user(account);
+  }
+
+  @override
+  Future<List<Invoice>> fetchInvoices(String token) async => [
+    for (final i in _auth(token).invoices.reversed) Invoice.fromJson(i),
+  ];
+
+  @override
+  Future<AppUser> advanceClock(String token, int days) async =>
+      _user(_auth(token));
 
   String _currencyOf(_Account account) => _currencies[account.country] ?? 'USD';
 

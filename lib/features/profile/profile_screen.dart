@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -16,6 +17,7 @@ import '../auth/auth_controller.dart';
 import '../home/catalog_controller.dart';
 import '../player/playback_controller.dart';
 import '../watchlist/watchlist_controller.dart';
+import 'subscription_actions.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -113,7 +115,8 @@ class ProfileScreen extends StatelessWidget {
     final text = Theme.of(context).textTheme;
 
     final user = auth.user;
-    final plan = user?.hasActivePlan == true ? user!.subscription : null;
+    final subscription = user?.subscription;
+    final plan = user?.hasActivePlan == true ? subscription : null;
     final rentals = user?.activeRentals() ?? const [];
     final continueWatching = playback.continueWatching
         .map((p) => catalog.byId(p.movieId))
@@ -234,6 +237,8 @@ class ProfileScreen extends StatelessWidget {
               ),
             ],
             const SizedBox(height: AppSpacing.xxl),
+            if (needsPaymentAlert(subscription))
+              BillingAlert(subscription: subscription!),
             _SettingsGroup(
               title: 'Subscription',
               children: [
@@ -242,16 +247,45 @@ class ProfileScreen extends StatelessWidget {
                   title: plan == null
                       ? 'No plan selected'
                       : '${plan.planName} plan',
-                  subtitle: plan == null
-                      ? 'Choose a plan to start watching'
-                      : '${plan.price.formatted}/month • ${plan.quality} • '
-                            'Renews ${Formatters.date(plan.currentPeriodEnd)}',
+                  subtitle: describeSubscription(subscription),
                   trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () => Navigator.of(context).pushNamed(
                     AppRoutes.plans,
                     arguments: const PlanArgs(popOnSave: true),
                   ),
                 ),
+                if (plan != null && plan.cancelAtPeriodEnd)
+                  _SettingsRow(
+                    icon: Icons.replay_rounded,
+                    title: 'Resume plan',
+                    subtitle:
+                        'Keep renewing after ${Formatters.date(plan.currentPeriodEnd)}',
+                    onTap: () => resumePlan(context),
+                  )
+                else if (plan != null)
+                  _SettingsRow(
+                    icon: Icons.cancel_outlined,
+                    title: 'Cancel plan',
+                    subtitle: plan.isPastDue
+                        ? 'Ends your plan now'
+                        : 'Keep watching until ${Formatters.date(plan.currentPeriodEnd)}',
+                    destructive: true,
+                    onTap: () => confirmCancelPlan(context, plan),
+                  ),
+                if (subscription != null)
+                  _SettingsRow(
+                    icon: Icons.receipt_long_outlined,
+                    title: 'Billing history',
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => showBillingHistory(context),
+                  ),
+                if (kDebugMode && subscription != null)
+                  _SettingsRow(
+                    icon: Icons.fast_forward_rounded,
+                    title: 'Developer: skip ahead',
+                    subtitle: 'Move billing dates forward on the test server',
+                    onTap: () => showSkipAhead(context),
+                  ),
               ],
             ),
             if (rentals.isNotEmpty)

@@ -50,6 +50,20 @@ a link to the plans. The same checkout flow runs, and once the payment is
 confirmed the title plays for 48 hours. Profile lists active rentals with the
 time left. Trailers are always free.
 
+### Managing a plan
+
+Profile › Subscription shows where the plan stands, for example "Renews
+15 Nov · Visa •••• 4242", "Ends 15 Nov" or "Payment overdue · watching until
+22 Nov". It offers:
+- **Pay now** when a renewal is due by hand (mobile wallets) or a card was
+  declined. The plan keeps working through the grace period until it's paid.
+- **Cancel plan / Resume plan.** A canceled plan runs to the end of the period
+  already paid for.
+- **Billing history** of past bills.
+- **Developer: skip ahead** (debug builds only), which asks the test server to
+  move this account's billing dates forward, to show a renewal or a failed
+  payment without waiting a month.
+
 ## Architecture
 
 ```

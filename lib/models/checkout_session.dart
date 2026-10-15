@@ -2,7 +2,7 @@ import 'money.dart';
 
 enum CheckoutStatus { open, paid, failed }
 
-enum CheckoutKind { subscription, rental }
+enum CheckoutKind { subscription, rental, renewal }
 
 /// A payment attempt for a plan or a rental, created by the nova-pay backend.
 class CheckoutSession {

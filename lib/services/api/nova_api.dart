@@ -60,5 +60,24 @@ abstract class NovaApi {
     required String idempotencyKey,
   });
 
+  /// Pays an open renewal invoice by hand ("Pay now").
+  Future<CheckoutSession> createRenewalCheckout(
+    String token, {
+    required String invoiceId,
+    required String idempotencyKey,
+  });
+
   Future<CheckoutSession> fetchCheckoutSession(String token, String sessionId);
+
+  /// Stops renewal: an active plan runs to the end of its period.
+  Future<AppUser> cancelSubscription(String token);
+
+  /// Takes back a cancellation before the period ends.
+  Future<AppUser> resumeSubscription(String token);
+
+  Future<List<Invoice>> fetchInvoices(String token);
+
+  /// Development servers only: pretend [days] have passed for this account
+  /// and run billing, to demo renewals without waiting.
+  Future<AppUser> advanceClock(String token, int days);
 }

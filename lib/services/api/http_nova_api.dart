@@ -124,6 +124,13 @@ class HttpNovaApi implements NovaApi {
   );
 
   @override
+  Future<CheckoutSession> createRenewalCheckout(
+    String token, {
+    required String invoiceId,
+    required String idempotencyKey,
+  }) => _createCheckout(token, {'invoiceId': invoiceId}, idempotencyKey);
+
+  @override
   Future<CheckoutSession> fetchCheckoutSession(
     String token,
     String sessionId,
@@ -134,6 +141,38 @@ class HttpNovaApi implements NovaApi {
       token: token,
     ),
   );
+
+  @override
+  Future<AppUser> cancelSubscription(String token) async =>
+      AppUser.fromAccountJson(
+        await _send('POST', '/v1/subscription/cancel', token: token),
+      );
+
+  @override
+  Future<AppUser> resumeSubscription(String token) async =>
+      AppUser.fromAccountJson(
+        await _send('POST', '/v1/subscription/resume', token: token),
+      );
+
+  @override
+  Future<List<Invoice>> fetchInvoices(String token) async {
+    final json = await _send('GET', '/v1/subscription/invoices', token: token);
+    return [
+      for (final i in json['invoices'] as List)
+        Invoice.fromJson(i as Map<String, dynamic>),
+    ];
+  }
+
+  @override
+  Future<AppUser> advanceClock(String token, int days) async {
+    final json = await _send(
+      'POST',
+      '/v1/dev/advance-clock',
+      token: token,
+      body: {'days': days},
+    );
+    return AppUser.fromAccountJson(json['account'] as Map<String, dynamic>);
+  }
 
   AuthResult _authResult(Map<String, dynamic> json) => AuthResult(
     token: json['token'] as String,

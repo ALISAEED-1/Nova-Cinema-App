@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import '../models/app_user.dart';
 import '../models/checkout_session.dart';
 import '../models/subscription_plan.dart';
 import 'api/nova_api.dart';
@@ -39,6 +40,18 @@ class BillingService {
     title: title,
     idempotencyKey: idempotencyKey,
   );
+
+  /// Creates (or finds) the checkout that pays an open renewal invoice.
+  Future<CheckoutSession> startRenewalCheckout(
+    String invoiceId, {
+    required String idempotencyKey,
+  }) => _api.createRenewalCheckout(
+    _token(),
+    invoiceId: invoiceId,
+    idempotencyKey: idempotencyKey,
+  );
+
+  Future<List<Invoice>> fetchInvoices() => _api.fetchInvoices(_token());
 
   Future<CheckoutSession> fetchSession(String sessionId) =>
       _api.fetchCheckoutSession(_token(), sessionId);

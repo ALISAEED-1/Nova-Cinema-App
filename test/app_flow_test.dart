@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nova_cinema/app.dart';
+import 'package:nova_cinema/features/profile/profile_screen.dart';
 import 'package:nova_cinema/features/subscription/checkout_launcher.dart';
 import 'package:nova_cinema/services/catalog_service.dart';
 import 'package:nova_cinema/services/local_store.dart';
@@ -193,8 +194,8 @@ void main() {
 
     // The settings groups sit below the fold of the profile list.
     final profileScroll = find
-        .ancestor(
-          of: find.text('ali@example.com').first,
+        .descendant(
+          of: find.byType(ProfileScreen),
           matching: find.byType(Scrollable),
         )
         .first;
@@ -373,6 +374,90 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('Rent for 48h'), findsOneWidget);
     expect(find.text('Or watch everything with a plan'), findsOneWidget);
+  });
+
+  /// Opens Profile and scrolls [target] to the top of the list, clear of the
+  /// translucent bottom navigation bar.
+  Future<void> profileShowing(WidgetTester tester, Finder target) async {
+    await tester.tap(navItem('Profile'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      target,
+      200,
+      scrollable: find
+          .descendant(
+            of: find.byType(ProfileScreen),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await tester.ensureVisible(target);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('a subscriber cancels, keeps watching, then resumes', (
+    tester,
+  ) async {
+    await pumpApp(tester, prefs: signedIn(planId: 'standard'));
+    await profileShowing(tester, find.text('Cancel plan'));
+    expect(find.textContaining('Renews'), findsOneWidget);
+    expect(find.textContaining('Visa •••• 4242'), findsOneWidget);
+
+    await tester.tap(find.text('Cancel plan'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('You can keep watching until'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Cancel plan'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('· Ends '), findsOneWidget);
+    expect(find.text('Resume plan'), findsOneWidget);
+    expect(find.text('Standard plan'), findsOneWidget, reason: 'still active');
+
+    await tester.tap(find.text('Resume plan'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cancel plan'), findsOneWidget);
+    expect(find.textContaining('Renews'), findsOneWidget);
+  });
+
+  testWidgets('a failed renewal is paid from Profile', (tester) async {
+    final prefs = signedIn(planId: 'standard');
+    api.makePastDue('ali@example.com');
+    await pumpApp(tester, prefs: prefs);
+    await profileShowing(tester, find.text(r'Pay $14.99 now'));
+
+    expect(find.text('Your payment didn’t go through'), findsOneWidget);
+    expect(
+      find.textContaining('Payment overdue · watching until'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text(r'Pay $14.99 now'));
+    await tester.pumpAndSettle();
+    expect(checkout.opened, 1);
+    expect(find.text('Your payment didn’t go through'), findsNothing);
+    expect(find.textContaining('Renews'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Billing history'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Billing history'));
+    await tester.pumpAndSettle();
+    expect(find.text('PAID'), findsOneWidget);
+  });
+
+  testWidgets('canceling an overdue plan ends it straight away', (
+    tester,
+  ) async {
+    final prefs = signedIn(planId: 'basic');
+    api.makePastDue('ali@example.com');
+    await pumpApp(tester, prefs: prefs);
+    await profileShowing(tester, find.text('Cancel plan'));
+
+    expect(find.text('Ends your plan now'), findsOneWidget);
+    await tester.tap(find.text('Cancel plan'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Cancel plan'));
+    await tester.pumpAndSettle();
+    expect(find.text('No plan selected'), findsOneWidget);
   });
 
   testWidgets('catalogue failure shows a retryable error', (tester) async {
