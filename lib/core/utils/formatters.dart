@@ -29,9 +29,27 @@ abstract final class Formatters {
   }
 
   static const _months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
+
+  /// "47h left" / "35 min left" until [end].
+  static String timeLeft(DateTime end, {DateTime? now}) {
+    final left = end.difference(now ?? DateTime.now());
+    if (left.inMinutes < 1) return 'Ending now';
+    if (left.inHours < 1) return '${left.inMinutes} min left';
+    return '${left.inHours}h left';
+  }
 
   /// "15 Nov 2026", in the device's time zone.
   static String date(DateTime d) {

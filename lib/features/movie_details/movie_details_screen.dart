@@ -13,8 +13,10 @@ import '../../widgets/movie_section.dart';
 import '../../widgets/primary_button.dart';
 import '../../widgets/rating_widget.dart';
 import '../../widgets/watchlist_button.dart';
+import '../auth/auth_controller.dart';
 import '../home/catalog_controller.dart';
 import '../player/playback_controller.dart';
+import 'rent_panel.dart';
 
 class MovieDetailsScreen extends StatelessWidget {
   const MovieDetailsScreen({super.key, required this.movie, this.heroTag});
@@ -32,7 +34,9 @@ class MovieDetailsScreen extends StatelessWidget {
           ? p.progressFor(movie.id)!.fraction
           : null,
     );
-    final progressEntry = context.read<PlaybackController>().progressFor(movie.id);
+    final progressEntry = context.read<PlaybackController>().progressFor(
+      movie.id,
+    );
     final similar = catalog.catalog?.similarTo(movie) ?? const <Movie>[];
     final expandedHeight = (responsive.height * 0.58).clamp(360.0, 640.0);
 
@@ -58,7 +62,8 @@ class MovieDetailsScreen extends StatelessWidget {
             ),
             flexibleSpace: LayoutBuilder(
               builder: (context, constraints) {
-                final collapsed = constraints.maxHeight <=
+                final collapsed =
+                    constraints.maxHeight <=
                     kToolbarHeight + MediaQuery.paddingOf(context).top + 8;
                 return FlexibleSpaceBar(
                   stretchModes: const [StretchMode.zoomBackground],
@@ -105,8 +110,9 @@ class MovieDetailsScreen extends StatelessWidget {
           SliverToBoxAdapter(
             child: Center(
               child: ConstrainedBox(
-                constraints:
-                    BoxConstraints(maxWidth: responsive.contentMaxWidth),
+                constraints: BoxConstraints(
+                  maxWidth: responsive.contentMaxWidth,
+                ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.gutter,
@@ -122,7 +128,9 @@ class MovieDetailsScreen extends StatelessWidget {
                       const SizedBox(height: AppSpacing.md),
                       Row(
                         children: [
-                          Expanded(child: MovieMetaRow(movie, showGenre: false)),
+                          Expanded(
+                            child: MovieMetaRow(movie, showGenre: false),
+                          ),
                           const _QualityBadge(),
                         ],
                       ),
@@ -130,9 +138,7 @@ class MovieDetailsScreen extends StatelessWidget {
                       Wrap(
                         spacing: AppSpacing.sm,
                         runSpacing: AppSpacing.sm,
-                        children: [
-                          for (final g in movie.genres) GenreChip(g),
-                        ],
+                        children: [for (final g in movie.genres) GenreChip(g)],
                       ),
                       const SizedBox(height: AppSpacing.lg),
                       Text(movie.synopsis, style: text.bodyLarge),
@@ -215,16 +221,29 @@ class _ActionButtons extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final resuming = progress != null;
+    final auth = context.watch<AuthController>();
+    final canWatch = auth.canWatch(movie.id);
+    final rental = auth.user?.hasActivePlan == true
+        ? null
+        : auth.user?.activeRentalFor(movie.id);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (movie.isPlayable) ...[
+        if (movie.isPlayable && !canWatch) ...[
+          RentPanel(movie: movie),
+          const SizedBox(height: AppSpacing.sm),
+        ],
+        if (movie.isPlayable && canWatch) ...[
           PrimaryButton(
             label: resuming ? 'Resume' : 'Watch Now',
             icon: Icons.play_arrow_rounded,
             light: true,
             onPressed: () => context.openPlayer(movie),
           ),
+          if (rental != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            RentalBadge(rental: rental),
+          ],
           if (resuming) ...[
             const SizedBox(height: AppSpacing.sm),
             Row(
@@ -326,8 +345,9 @@ class _CastRow extends StatelessWidget {
         separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.lg),
         itemBuilder: (context, i) {
           final name = movie.cast[i];
-          final image =
-              i < movie.castImages.length ? movie.castImages[i] : null;
+          final image = i < movie.castImages.length
+              ? movie.castImages[i]
+              : null;
           return SizedBox(
             width: 76,
             child: Column(
@@ -346,8 +366,9 @@ class _CastRow extends StatelessWidget {
                       : Center(
                           child: Text(
                             Formatters.initials(name),
-                            style: text.titleMedium
-                                ?.copyWith(color: AppColors.textSecondary),
+                            style: text.titleMedium?.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
                           ),
                         ),
                 ),
@@ -357,8 +378,10 @@ class _CastRow extends StatelessWidget {
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: text.bodySmall
-                      ?.copyWith(color: AppColors.textPrimary, height: 1.2),
+                  style: text.bodySmall?.copyWith(
+                    color: AppColors.textPrimary,
+                    height: 1.2,
+                  ),
                 ),
               ],
             ),
@@ -411,8 +434,9 @@ class _DetailsTable extends StatelessWidget {
                   Expanded(
                     child: Text(
                       rows[i].$2,
-                      style: text.bodyMedium
-                          ?.copyWith(color: AppColors.textPrimary),
+                      style: text.bodyMedium?.copyWith(
+                        color: AppColors.textPrimary,
+                      ),
                     ),
                   ),
                 ],

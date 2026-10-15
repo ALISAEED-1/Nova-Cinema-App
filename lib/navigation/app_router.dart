@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../core/theme/app_spacing.dart';
+import '../features/auth/auth_controller.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/register_screen.dart';
 import '../features/movie_details/movie_details_screen.dart';
@@ -81,17 +83,16 @@ abstract final class AppRouter {
     Widget page,
     RouteSettings settings, {
     Duration duration = AppDurations.slow,
-  }) =>
-      PageRouteBuilder<T>(
-        settings: settings,
-        transitionDuration: duration,
-        reverseTransitionDuration: AppDurations.normal,
-        pageBuilder: (_, __, ___) => page,
-        transitionsBuilder: (_, animation, __, child) => FadeTransition(
-          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
-          child: child,
-        ),
-      );
+  }) => PageRouteBuilder<T>(
+    settings: settings,
+    transitionDuration: duration,
+    reverseTransitionDuration: AppDurations.normal,
+    pageBuilder: (_, __, ___) => page,
+    transitionsBuilder: (_, animation, __, child) => FadeTransition(
+      opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+      child: child,
+    ),
+  );
 
   static PageRoute<T> _slideUp<T>(Widget page, RouteSettings settings) =>
       PageRouteBuilder<T>(
@@ -127,9 +128,15 @@ extension AppNavigation on BuildContext {
         arguments: DetailsArgs(movie: movie, heroTag: heroTag),
       );
 
-  Future<void> openPlayer(Movie movie, {bool trailer = false}) =>
-      Navigator.of(this).pushNamed(
-        AppRoutes.player,
-        arguments: PlayerArgs(movie: movie, trailer: trailer),
-      );
+  /// Plays a title. Trailers are free; the full title needs a plan or a
+  /// rental, so without one this opens the details screen, which offers both.
+  Future<void> openPlayer(Movie movie, {bool trailer = false}) {
+    if (!trailer && !read<AuthController>().canWatch(movie.id)) {
+      return openDetails(movie);
+    }
+    return Navigator.of(this).pushNamed(
+      AppRoutes.player,
+      arguments: PlayerArgs(movie: movie, trailer: trailer),
+    );
+  }
 }

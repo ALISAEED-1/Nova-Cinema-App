@@ -52,7 +52,9 @@ void main() {
     await tester.pumpWidget(
       NovaCinemaApp(
         store: store,
-        catalogService: CatalogService(bundle: _JsonBundle(catalog ?? catalogJson)),
+        catalogService: CatalogService(
+          bundle: _JsonBundle(catalog ?? catalogJson),
+        ),
         api: api,
         checkoutLauncher: checkout,
       ),
@@ -64,6 +66,16 @@ void main() {
 
   Future<void> launch(WidgetTester tester) => pumpApp(tester);
 
+  Finder navItem(String label) => find.widgetWithText(InkResponse, label);
+
+  /// From home, opens the plan screen through Profile › Subscription.
+  Future<void> openPlans(WidgetTester tester) async {
+    await tester.tap(navItem('Profile'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('No plan selected'));
+    await tester.pumpAndSettle();
+  }
+
   /// Saved state for a signed-in user, optionally already subscribed.
   Map<String, Object> signedIn({String? planId, String country = 'US'}) {
     api.seedAccount(email: 'ali@example.com', planId: planId, country: country);
@@ -73,10 +85,9 @@ void main() {
     };
   }
 
-  Finder navItem(String label) => find.widgetWithText(InkResponse, label);
-
-  testWidgets('sign up → choose plan → browse → list → sign out',
-      (tester) async {
+  testWidgets('sign up → choose plan → browse → list → sign out', (
+    tester,
+  ) async {
     await launch(tester);
     expect(find.text('Welcome back'), findsOneWidget);
 
@@ -113,10 +124,12 @@ void main() {
     expect(find.text('Horror'), findsNothing, reason: 'no horror titles exist');
 
     // Rows further down are built lazily — scroll the page to reach one.
-    final homeScroll = find.descendant(
-      of: find.byType(CustomScrollView),
-      matching: find.byType(Scrollable),
-    ).first;
+    final homeScroll = find
+        .descendant(
+          of: find.byType(CustomScrollView),
+          matching: find.byType(Scrollable),
+        )
+        .first;
     await tester.scrollUntilVisible(
       find.text('Must-Watch Series'),
       200,
@@ -179,10 +192,12 @@ void main() {
     expect(find.text('Premium plan'), findsOneWidget);
 
     // The settings groups sit below the fold of the profile list.
-    final profileScroll = find.ancestor(
-      of: find.text('ali@example.com').first,
-      matching: find.byType(Scrollable),
-    ).first;
+    final profileScroll = find
+        .ancestor(
+          of: find.text('ali@example.com').first,
+          matching: find.byType(Scrollable),
+        )
+        .first;
     await tester.scrollUntilVisible(
       find.text('Sign out'),
       200,
@@ -205,20 +220,28 @@ void main() {
     expect(find.text('Trending Now'), findsOneWidget);
   });
 
-  testWidgets('a session saved by the old local-only app signs out cleanly',
-      (tester) async {
-    await pumpApp(tester, prefs: {
-      'novaOnboardingSeen': true,
-      'novaUser': jsonEncode(
-        {'name': 'Ali', 'email': 'ali@example.com', 'plan': 'basic'},
-      ),
-    });
+  testWidgets('a session saved by the old local-only app signs out cleanly', (
+    tester,
+  ) async {
+    await pumpApp(
+      tester,
+      prefs: {
+        'novaOnboardingSeen': true,
+        'novaUser': jsonEncode({
+          'name': 'Ali',
+          'email': 'ali@example.com',
+          'plan': 'basic',
+        }),
+      },
+    );
     expect(find.text('Welcome back'), findsOneWidget);
   });
 
-  testWidgets('a declined card keeps the user on the plan screen',
-      (tester) async {
+  testWidgets('a declined card keeps the user on the plan screen', (
+    tester,
+  ) async {
     await pumpApp(tester, prefs: signedIn(country: 'PK'));
+    await openPlans(tester);
     expect(find.text('Choose your plan'), findsOneWidget);
     expect(
       find.text('Rs 899 /month', findRichText: true),
@@ -240,13 +263,16 @@ void main() {
     checkout.declineCard = false;
     await tester.tap(find.textContaining('Continue with Standard'));
     await tester.pumpAndSettle();
-    expect(find.text('Trending Now'), findsOneWidget);
+    // Opened from the profile, so it returns there with the new plan.
+    expect(find.text('Standard plan'), findsOneWidget);
     expect(checkout.opened, 2);
   });
 
-  testWidgets('changing the billing country reprices the plans',
-      (tester) async {
+  testWidgets('changing the billing country reprices the plans', (
+    tester,
+  ) async {
     await pumpApp(tester, prefs: signedIn());
+    await openPlans(tester);
     expect(find.text('Billing country: United States · USD'), findsOneWidget);
 
     await tester.tap(find.text('Billing country: United States · USD'));
@@ -256,11 +282,15 @@ void main() {
 
     expect(find.text('Billing country: Pakistan · PKR'), findsOneWidget);
     expect(find.text('Rs 899 /month', findRichText: true), findsOneWidget);
-    expect(find.textContaining('Continue with Standard · Rs 899/mo'), findsOneWidget);
+    expect(
+      find.textContaining('Continue with Standard · Rs 899/mo'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('canceling checkout charges nothing', (tester) async {
     await pumpApp(tester, prefs: signedIn());
+    await openPlans(tester);
 
     checkout.nextReturn = CheckoutReturn.canceled;
     await tester.tap(find.textContaining('Continue with Standard'));
@@ -270,15 +300,95 @@ void main() {
     expect(find.text('Choose your plan'), findsOneWidget);
   });
 
+  testWidgets('a new member can skip the plan and browse', (tester) async {
+    await launch(tester);
+    await tester.tap(find.text('Sign up'));
+    await tester.pumpAndSettle();
+    final fields = find.byType(TextFormField);
+    await tester.enterText(fields.at(0), 'Ali');
+    await tester.enterText(fields.at(1), 'ali@example.com');
+    await tester.enterText(fields.at(2), 'secret123');
+    await tester.tap(find.text('I agree to the Terms & Conditions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign Up'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Not now, I’ll browse and rent'));
+    await tester.pumpAndSettle();
+    expect(find.text('Trending Now'), findsOneWidget);
+    expect(checkout.opened, 0);
+  });
+
+  testWidgets('without a plan, a title is rented for 48 hours, then plays', (
+    tester,
+  ) async {
+    await pumpApp(tester, prefs: signedIn());
+    expect(
+      find.text('Trending Now'),
+      findsOneWidget,
+      reason: 'browsing is open',
+    );
+
+    await tester.tap(navItem('Search'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'dune');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Dune').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Watch Now'), findsNothing);
+    expect(find.text(r'Rent for 48h · $3.99'), findsOneWidget);
+
+    await tester.ensureVisible(find.text(r'Rent for 48h · $3.99'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(r'Rent for 48h · $3.99'));
+    await tester.pumpAndSettle();
+    expect(checkout.opened, 1);
+    expect(
+      find.textContaining('Rented. Dune is yours for 48 hours'),
+      findsOneWidget,
+    );
+    expect(find.text('Watch Now'), findsOneWidget);
+    expect(find.textContaining('Rented · 47h left'), findsOneWidget);
+
+    // Profile lists the rental.
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded).first);
+    await tester.pumpAndSettle();
+    await tester.tap(navItem('Profile'));
+    await tester.pumpAndSettle();
+    final profileScroll = find.byType(Scrollable).first;
+    await tester.scrollUntilVisible(
+      find.text('Rentals'),
+      200,
+      scrollable: profileScroll,
+    );
+    expect(find.text('47h left'), findsOneWidget);
+  });
+
+  testWidgets('Watch Now without a plan or rental opens the rental offer', (
+    tester,
+  ) async {
+    await pumpApp(tester, prefs: signedIn());
+    await tester.tap(find.text('Watch Now').first);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Rent for 48h'), findsOneWidget);
+    expect(find.text('Or watch everything with a plan'), findsOneWidget);
+  });
+
   testWidgets('catalogue failure shows a retryable error', (tester) async {
-    await pumpApp(tester, prefs: signedIn(planId: 'basic'), catalog: 'not json');
+    await pumpApp(
+      tester,
+      prefs: signedIn(planId: 'basic'),
+      catalog: 'not json',
+    );
 
     expect(find.text('Couldn’t load the catalogue'), findsOneWidget);
     expect(find.text('Try again'), findsOneWidget);
   });
 
-  testWidgets('first launch runs onboarding, then hands off to sign-up',
-      (tester) async {
+  testWidgets('first launch runs onboarding, then hands off to sign-up', (
+    tester,
+  ) async {
     await pumpApp(tester, prefs: {});
 
     // Slide 1
@@ -345,8 +455,9 @@ void main() {
     expect(find.text('Choose your plan'), findsOneWidget);
   });
 
-  testWidgets('home chrome retracts scrolling down and returns scrolling up',
-      (tester) async {
+  testWidgets('home chrome retracts scrolling down and returns scrolling up', (
+    tester,
+  ) async {
     await pumpApp(tester, prefs: signedIn(planId: 'basic'));
 
     // The wordmark and the action buttons ride in their own AnimatedSlide,
@@ -372,14 +483,24 @@ void main() {
 
     await tester.drag(page, const Offset(0, -400));
     await tester.pumpAndSettle();
-    expect(slideOf(NovaLogo), const Offset(-1.4, 0),
-        reason: 'the wordmark leaves to the left');
-    expect(slideOf(UserAvatar), const Offset(1.4, 0),
-        reason: 'the actions leave to the right');
+    expect(
+      slideOf(NovaLogo),
+      const Offset(-1.4, 0),
+      reason: 'the wordmark leaves to the left',
+    );
+    expect(
+      slideOf(UserAvatar),
+      const Offset(1.4, 0),
+      reason: 'the actions leave to the right',
+    );
 
     await tester.drag(page, const Offset(0, 120));
     await tester.pumpAndSettle();
-    expect(slideOf(NovaLogo), Offset.zero, reason: 'scrolling up brings it back');
+    expect(
+      slideOf(NovaLogo),
+      Offset.zero,
+      reason: 'scrolling up brings it back',
+    );
     expect(slideOf(UserAvatar), Offset.zero);
   });
 }

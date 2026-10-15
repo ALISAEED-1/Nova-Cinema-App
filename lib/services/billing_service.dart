@@ -5,7 +5,7 @@ import '../models/subscription_plan.dart';
 import 'api/nova_api.dart';
 import 'auth_service.dart';
 
-/// Plans and checkout, on behalf of the signed-in user.
+/// Plans, rentals and checkout, on behalf of the signed-in user.
 class BillingService {
   BillingService(this._api, this._auth);
 
@@ -16,16 +16,29 @@ class BillingService {
 
   Future<List<BillingCountry>> fetchCountries() => _api.fetchCountries();
 
+  Future<RentalOffer> fetchRentalOffer() => _api.fetchRentalOffer(_token());
+
   /// Creates (or, for a repeated [idempotencyKey], finds) the checkout for a plan.
-  Future<CheckoutSession> startCheckout(
+  Future<CheckoutSession> startPlanCheckout(
     String planId, {
     required String idempotencyKey,
-  }) =>
-      _api.createCheckoutSession(
-        _token(),
-        planId: planId,
-        idempotencyKey: idempotencyKey,
-      );
+  }) => _api.createPlanCheckout(
+    _token(),
+    planId: planId,
+    idempotencyKey: idempotencyKey,
+  );
+
+  /// Creates (or finds) the checkout to rent one title.
+  Future<CheckoutSession> startRentalCheckout(
+    String movieId, {
+    required String title,
+    required String idempotencyKey,
+  }) => _api.createRentalCheckout(
+    _token(),
+    movieId: movieId,
+    title: title,
+    idempotencyKey: idempotencyKey,
+  );
 
   Future<CheckoutSession> fetchSession(String sessionId) =>
       _api.fetchCheckoutSession(_token(), sessionId);
@@ -50,9 +63,10 @@ class BillingService {
   /// A fresh random key for one purchase attempt.
   static String newIdempotencyKey() {
     final random = Random.secure();
-    return List.generate(16, (_) => random.nextInt(256))
-        .map((b) => b.toRadixString(16).padLeft(2, '0'))
-        .join();
+    return List.generate(
+      16,
+      (_) => random.nextInt(256),
+    ).map((b) => b.toRadixString(16).padLeft(2, '0')).join();
   }
 
   String _token() {

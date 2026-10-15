@@ -37,7 +37,18 @@ The app calls `http://localhost:4000` by default. Change it with
 3. The provider's hosted checkout page opens in a web view. Card details go to
    the provider, never to the app.
 4. When the provider redirects back, the app asks nova-pay for the outcome. The
-   plan unlocks only when the provider's webhook has marked the session paid.
+   plan unlocks only when the server has confirmed the payment with the provider.
+
+US and EU checkouts go to Stripe when the backend has a Stripe test key;
+everything else uses the backend's test provider.
+
+### Rentals
+
+A plan is optional. New members can choose **Not now** and browse. Any title
+they can't watch shows **Rent for 48h** (for example `Rs 199` or `$3.99`) beside
+a link to the plans. The same checkout flow runs, and once the payment is
+confirmed the title plays for 48 hours. Profile lists active rentals with the
+time left. Trailers are always free.
 
 ## Architecture
 

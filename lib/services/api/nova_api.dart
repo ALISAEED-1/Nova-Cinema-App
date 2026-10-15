@@ -42,10 +42,21 @@ abstract class NovaApi {
 
   Future<PlanCatalog> fetchPlans(String token);
 
-  /// Repeating a call with the same [idempotencyKey] returns the same session.
-  Future<CheckoutSession> createCheckoutSession(
+  Future<RentalOffer> fetchRentalOffer(String token);
+
+  /// Starts paying for a plan. Repeating a call with the same
+  /// [idempotencyKey] returns the same session.
+  Future<CheckoutSession> createPlanCheckout(
     String token, {
     required String planId,
+    required String idempotencyKey,
+  });
+
+  /// Starts paying to rent one title, under the same idempotency rule.
+  Future<CheckoutSession> createRentalCheckout(
+    String token, {
+    required String movieId,
+    required String title,
     required String idempotencyKey,
   });
 

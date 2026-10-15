@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/utils/responsive.dart';
-import '../../models/checkout_session.dart';
 import '../../models/subscription_plan.dart';
 import '../../navigation/app_router.dart';
 import '../../services/api/nova_api.dart';
@@ -14,7 +13,7 @@ import '../../widgets/nova_logo.dart';
 import '../../widgets/primary_button.dart';
 import '../../widgets/state_widgets.dart';
 import '../auth/auth_controller.dart';
-import 'checkout_launcher.dart';
+import 'checkout_flow.dart';
 
 enum _Step { idle, opening, confirming }
 
@@ -80,46 +79,35 @@ class _PlanScreenState extends State<PlanScreen> {
   Future<void> _checkout() async {
     final plan = _catalog?.byId(_selectedId);
     if (plan == null) return;
-    final billing = context.read<BillingService>();
-    final auth = context.read<AuthController>();
-    final launcher = context.read<CheckoutLauncher>();
     final key = _attemptKeys[plan.id] ??= BillingService.newIdempotencyKey();
 
     setState(() => _step = _Step.opening);
     try {
-      var session = await billing.startCheckout(plan.id, idempotencyKey: key);
-      CheckoutReturn? how;
-      if (session.status == CheckoutStatus.open) {
-        if (!mounted) return;
-        how = await launcher.open(context, session);
-        if (!mounted) return;
-        setState(() => _step = _Step.confirming);
-        // Even after a cancel, check: they may have paid just before closing.
-        session = how == CheckoutReturn.returned
-            ? await billing.waitForOutcome(session.id)
-            : await billing.fetchSession(session.id);
-      }
+      final (result, session) = await runCheckout(
+        context,
+        (billing) => billing.startPlanCheckout(plan.id, idempotencyKey: key),
+        onConfirming: () {
+          if (mounted) setState(() => _step = _Step.confirming);
+        },
+      );
       if (!mounted) return;
 
-      switch (session.status) {
-        case CheckoutStatus.paid:
+      switch (result) {
+        case CheckoutResult.paid:
           _attemptKeys.remove(plan.id);
-          await auth.refreshAccount();
-          if (mounted) _finish(plan);
-        case CheckoutStatus.failed:
+          _finish(plan);
+        case CheckoutResult.failed:
           _attemptKeys.remove(plan.id);
           showAppSnackBar(
             context,
-            _failureMessage(session.failureReason),
+            checkoutFailureMessage(session.failureReason),
             icon: Icons.error_outline_rounded,
             isError: true,
           );
-        case CheckoutStatus.open:
+        case CheckoutResult.canceled || CheckoutResult.pending:
           showAppSnackBar(
             context,
-            how == CheckoutReturn.returned
-                ? 'Your payment is still being confirmed. Your plan updates as soon as it is.'
-                : 'Checkout canceled. You have not been charged.',
+            checkoutUnsettledMessage(result),
             icon: Icons.info_outline_rounded,
           );
       }
@@ -151,14 +139,6 @@ class _PlanScreenState extends State<PlanScreen> {
       ).pushNamedAndRemoveUntil(AppRoutes.main, (_) => false);
     }
   }
-
-  static String _failureMessage(String? reason) => switch (reason) {
-    'card_declined' =>
-      'Your card was declined and nothing was charged. Try again or use another card.',
-    'amount_mismatch' =>
-      'The payment didn’t match the plan price, so it wasn’t accepted.',
-    _ => 'The payment didn’t go through. Please try again.',
-  };
 
   Future<void> _changeCountry() async {
     final auth = context.read<AuthController>();
@@ -374,10 +354,28 @@ class _PlanScreenState extends State<PlanScreen> {
               decoration: const BoxDecoration(
                 border: Border(top: BorderSide(color: AppColors.border)),
               ),
-              child: PrimaryButton(
-                label: label,
-                loading: _step == _Step.opening,
-                onPressed: _step == _Step.idle ? onPressed : null,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  PrimaryButton(
+                    label: label,
+                    loading: _step == _Step.opening,
+                    onPressed: _step == _Step.idle ? onPressed : null,
+                  ),
+                  // First run: a plan is optional. Without one the catalogue
+                  // can still be browsed, and single titles rented.
+                  if (!widget.args.popOnSave && currentPlanId == null)
+                    TextButton(
+                      onPressed: _step == _Step.idle
+                          ? () => Navigator.of(context).pushNamedAndRemoveUntil(
+                              AppRoutes.main,
+                              (_) => false,
+                            )
+                          : null,
+                      child: const Text('Not now, I’ll browse and rent'),
+                    ),
+                ],
               ),
             ),
           ],

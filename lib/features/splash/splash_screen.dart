@@ -31,8 +31,10 @@ class _SplashScreenState extends State<SplashScreen>
     parent: _controller,
     curve: const Interval(0, 0.6, curve: Curves.easeOut),
   );
-  late final Animation<double> _scale = Tween<double>(begin: 1.35, end: 1)
-      .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+  late final Animation<double> _scale = Tween<double>(
+    begin: 1.35,
+    end: 1,
+  ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
 
   @override
   void initState() {
@@ -56,9 +58,9 @@ class _SplashScreenState extends State<SplashScreen>
       next = AppRoutes.onboarding;
     } else if (!auth.isAuthenticated) {
       next = AppRoutes.login;
-    } else if (auth.needsPlan) {
-      next = AppRoutes.plans;
     } else {
+      // Signed-in users without a plan still browse; titles they can't watch
+      // offer a plan or a rental.
       next = AppRoutes.main;
     }
     Navigator.of(context).pushReplacementNamed(next);

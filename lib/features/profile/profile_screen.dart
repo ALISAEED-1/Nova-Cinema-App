@@ -99,7 +99,9 @@ class ProfileScreen extends StatelessWidget {
     if (confirmed != true || !context.mounted) return;
     await context.read<AuthController>().logout();
     if (!context.mounted) return;
-    Navigator.of(context).pushNamedAndRemoveUntil(AppRoutes.login, (_) => false);
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil(AppRoutes.login, (_) => false);
   }
 
   @override
@@ -112,6 +114,7 @@ class ProfileScreen extends StatelessWidget {
 
     final user = auth.user;
     final plan = user?.hasActivePlan == true ? user!.subscription : null;
+    final rentals = user?.activeRentals() ?? const [];
     final continueWatching = playback.continueWatching
         .map((p) => catalog.byId(p.movieId))
         .whereType<Movie>()
@@ -139,7 +142,9 @@ class ProfileScreen extends StatelessWidget {
               child: Text('Profile', style: text.headlineLarge),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.gutter),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.gutter,
+              ),
               child: Row(
                 children: [
                   const UserAvatar(size: 72, accent: true),
@@ -177,7 +182,9 @@ class ProfileScreen extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.xl),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.gutter),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.gutter,
+              ),
               child: Row(
                 children: [
                   _StatTile(
@@ -232,12 +239,13 @@ class ProfileScreen extends StatelessWidget {
               children: [
                 _SettingsRow(
                   icon: Icons.workspace_premium_outlined,
-                  title:
-                      plan == null ? 'No plan selected' : '${plan.planName} plan',
+                  title: plan == null
+                      ? 'No plan selected'
+                      : '${plan.planName} plan',
                   subtitle: plan == null
                       ? 'Choose a plan to start watching'
                       : '${plan.price.formatted}/month • ${plan.quality} • '
-                          'Renews ${Formatters.date(plan.currentPeriodEnd)}',
+                            'Renews ${Formatters.date(plan.currentPeriodEnd)}',
                   trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () => Navigator.of(context).pushNamed(
                     AppRoutes.plans,
@@ -246,6 +254,23 @@ class ProfileScreen extends StatelessWidget {
                 ),
               ],
             ),
+            if (rentals.isNotEmpty)
+              _SettingsGroup(
+                title: 'Rentals',
+                children: [
+                  for (final rental in rentals)
+                    _SettingsRow(
+                      icon: Icons.local_activity_outlined,
+                      title: rental.title,
+                      subtitle: Formatters.timeLeft(rental.expiresAt),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () {
+                        final movie = catalog.byId(rental.movieId);
+                        if (movie != null) context.openDetails(movie);
+                      },
+                    ),
+                ],
+              ),
             _SettingsGroup(
               title: 'Playback',
               children: [
@@ -404,7 +429,10 @@ class _SettingsGroup extends StatelessWidget {
                 for (var i = 0; i < children.length; i++) ...[
                   children[i],
                   if (i < children.length - 1)
-                    const Divider(indent: AppSpacing.lg, endIndent: AppSpacing.lg),
+                    const Divider(
+                      indent: AppSpacing.lg,
+                      endIndent: AppSpacing.lg,
+                    ),
                 ],
               ],
             ),
@@ -438,9 +466,14 @@ class _SettingsRow extends StatelessWidget {
     final color = destructive ? AppColors.error : AppColors.textPrimary;
     return ListTile(
       onTap: onTap,
-      leading: Icon(icon, color: destructive ? AppColors.error : AppColors.textSecondary),
+      leading: Icon(
+        icon,
+        color: destructive ? AppColors.error : AppColors.textSecondary,
+      ),
       title: Text(title, style: text.titleMedium?.copyWith(color: color)),
-      subtitle: subtitle == null ? null : Text(subtitle!, style: text.bodySmall),
+      subtitle: subtitle == null
+          ? null
+          : Text(subtitle!, style: text.bodySmall),
       trailing: trailing,
       contentPadding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.lg,

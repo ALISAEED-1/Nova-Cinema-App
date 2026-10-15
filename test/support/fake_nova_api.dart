@@ -22,6 +22,7 @@ class _Account {
   final String password;
   String country;
   Map<String, dynamic>? subscription;
+  final rentals = <Map<String, dynamic>>[];
 }
 
 class _Session {
@@ -41,9 +42,26 @@ class FakeNovaApi implements NovaApi {
 
   static const _currencies = {'US': 'USD', 'DE': 'EUR', 'PK': 'PKR'};
   static const _prices = {
-    'USD': {'basic': (999, r'$9.99'), 'standard': (1499, r'$14.99'), 'premium': (1999, r'$19.99')},
-    'EUR': {'basic': (899, '€8.99'), 'standard': (1399, '€13.99'), 'premium': (1799, '€17.99')},
-    'PKR': {'basic': (59900, 'Rs 599'), 'standard': (89900, 'Rs 899'), 'premium': (119900, 'Rs 1,199')},
+    'USD': {
+      'basic': (999, r'$9.99'),
+      'standard': (1499, r'$14.99'),
+      'premium': (1999, r'$19.99'),
+    },
+    'EUR': {
+      'basic': (899, '€8.99'),
+      'standard': (1399, '€13.99'),
+      'premium': (1799, '€17.99'),
+    },
+    'PKR': {
+      'basic': (59900, 'Rs 599'),
+      'standard': (89900, 'Rs 899'),
+      'premium': (119900, 'Rs 1,199'),
+    },
+  };
+  static const _rentalPrices = {
+    'USD': (399, r'$3.99'),
+    'EUR': (349, '€3.49'),
+    'PKR': (19900, 'Rs 199'),
   };
   static const _plans = [
     ('basic', 'Basic', 'HD', null),
@@ -76,8 +94,18 @@ class FakeNovaApi implements NovaApi {
     final session = _sessions[sessionId]!;
     if (session.json['status'] != 'open') return;
     session.json['status'] = paid ? 'paid' : 'failed';
-    if (paid) {
-      _subscribe(_accounts[session.email]!, session.json['planId'] as String);
+    final account = _accounts[session.email]!;
+    if (paid && session.json['kind'] == 'rental') {
+      account.rentals.add({
+        'movieId': session.json['movieId'],
+        'title': session.json['title'],
+        'expiresAt': DateTime.now()
+            .add(const Duration(hours: 48))
+            .toUtc()
+            .toIso8601String(),
+      });
+    } else if (paid) {
+      _subscribe(account, session.json['planId'] as String);
     } else {
       session.json['failureReason'] = 'card_declined';
     }
@@ -129,13 +157,13 @@ class FakeNovaApi implements NovaApi {
 
   @override
   Future<List<BillingCountry>> fetchCountries() async => const [
-        BillingCountry(code: 'US', name: 'United States', currency: 'USD'),
-        BillingCountry(code: 'DE', name: 'Germany', currency: 'EUR'),
-        BillingCountry(code: 'FR', name: 'France', currency: 'EUR'),
-        BillingCountry(code: 'PK', name: 'Pakistan', currency: 'PKR'),
-        BillingCountry(code: 'IN', name: 'India', currency: 'INR'),
-        BillingCountry(code: 'BD', name: 'Bangladesh', currency: 'BDT'),
-      ];
+    BillingCountry(code: 'US', name: 'United States', currency: 'USD'),
+    BillingCountry(code: 'DE', name: 'Germany', currency: 'EUR'),
+    BillingCountry(code: 'FR', name: 'France', currency: 'EUR'),
+    BillingCountry(code: 'PK', name: 'Pakistan', currency: 'PKR'),
+    BillingCountry(code: 'IN', name: 'India', currency: 'INR'),
+    BillingCountry(code: 'BD', name: 'Bangladesh', currency: 'BDT'),
+  ];
 
   @override
   Future<PlanCatalog> fetchPlans(String token) async {
@@ -159,22 +187,72 @@ class FakeNovaApi implements NovaApi {
   }
 
   @override
-  Future<CheckoutSession> createCheckoutSession(
+  Future<RentalOffer> fetchRentalOffer(String token) async =>
+      RentalOffer.fromJson({
+        'hours': 48,
+        'price': _rentalPrice(_currencyOf(_auth(token))),
+      });
+
+  @override
+  Future<CheckoutSession> createPlanCheckout(
     String token, {
     required String planId,
     required String idempotencyKey,
   }) async {
     final account = _auth(token);
+    return _createSession(account, idempotencyKey, {
+      'kind': 'subscription',
+      'planId': planId,
+      'movieId': null,
+      'amount': _price(_currencyOf(account), planId),
+    });
+  }
+
+  @override
+  Future<CheckoutSession> createRentalCheckout(
+    String token, {
+    required String movieId,
+    required String title,
+    required String idempotencyKey,
+  }) async {
+    final account = _auth(token);
+    if (account.subscription != null) {
+      throw const ApiException(
+        'Your plan already includes this title.',
+        statusCode: 409,
+      );
+    }
+    if (account.rentals.any((r) => r['movieId'] == movieId)) {
+      throw const ApiException(
+        'You are already renting this title.',
+        statusCode: 409,
+      );
+    }
+    return _createSession(account, idempotencyKey, {
+      'kind': 'rental',
+      'planId': null,
+      'movieId': movieId,
+      'title': title,
+      'amount': _rentalPrice(_currencyOf(account)),
+    });
+  }
+
+  CheckoutSession _createSession(
+    _Account account,
+    String idempotencyKey,
+    Map<String, dynamic> item,
+  ) {
     final existing = _sessionsByKey['${account.email}|$idempotencyKey'];
-    if (existing != null) return CheckoutSession.fromJson(_sessions[existing]!.json);
+    if (existing != null) {
+      return CheckoutSession.fromJson(_sessions[existing]!.json);
+    }
 
     final id = 'cs_${_ids++}';
     _sessionsByKey['${account.email}|$idempotencyKey'] = id;
     _sessions[id] = _Session(account.email, {
       'id': id,
       'status': 'open',
-      'planId': planId,
-      'amount': _price(_currencyOf(account), planId),
+      ...item,
       'checkoutUrl': 'https://pay.test/checkout/$id',
       'returnUrl': 'https://pay.test/checkout/return?session=$id',
       'failureReason': null,
@@ -195,7 +273,12 @@ class FakeNovaApi implements NovaApi {
     return CheckoutSession.fromJson(session.json);
   }
 
-  _Account _addAccount(String name, String email, String password, String country) {
+  _Account _addAccount(
+    String name,
+    String email,
+    String password,
+    String country,
+  ) {
     final account = _Account(
       id: 'usr_${_ids++}',
       name: name,
@@ -230,30 +313,47 @@ class FakeNovaApi implements NovaApi {
       'quality': quality,
       'status': 'active',
       'price': _price(_currencyOf(account), planId),
-      'currentPeriodEnd':
-          DateTime.now().add(const Duration(days: 30)).toUtc().toIso8601String(),
+      'currentPeriodEnd': DateTime.now()
+          .add(const Duration(days: 30))
+          .toUtc()
+          .toIso8601String(),
     };
   }
 
   String _currencyOf(_Account account) => _currencies[account.country] ?? 'USD';
 
+  Map<String, dynamic> _rentalPrice(String currency) {
+    final (amount, formatted) = _rentalPrices[currency]!;
+    return {
+      'amountMinor': amount,
+      'currency': currency,
+      'formatted': formatted,
+    };
+  }
+
   Map<String, dynamic> _price(String currency, String planId) {
     final (amount, formatted) = _prices[currency]![planId]!;
-    return {'amountMinor': amount, 'currency': currency, 'formatted': formatted};
+    return {
+      'amountMinor': amount,
+      'currency': currency,
+      'formatted': formatted,
+    };
   }
 
   Map<String, dynamic> _accountJson(_Account account) => {
-        'user': {
-          'id': account.id,
-          'name': account.name,
-          'email': account.email,
-          'country': account.country,
-          'currency': _currencyOf(account),
-        },
-        'subscription': account.subscription,
-      };
+    'user': {
+      'id': account.id,
+      'name': account.name,
+      'email': account.email,
+      'country': account.country,
+      'currency': _currencyOf(account),
+    },
+    'subscription': account.subscription,
+    'rentals': account.rentals,
+  };
 
-  AppUser _user(_Account account) => AppUser.fromAccountJson(_accountJson(account));
+  AppUser _user(_Account account) =>
+      AppUser.fromAccountJson(_accountJson(account));
 }
 
 /// Stands in for the provider's hosted page: settles the session at once.
@@ -269,7 +369,10 @@ class FakeCheckoutLauncher implements CheckoutLauncher {
   int opened = 0;
 
   @override
-  Future<CheckoutReturn> open(BuildContext context, CheckoutSession session) async {
+  Future<CheckoutReturn> open(
+    BuildContext context,
+    CheckoutSession session,
+  ) async {
     opened++;
     if (nextReturn == CheckoutReturn.returned) {
       api.settleCheckout(session.id, paid: !declineCard);

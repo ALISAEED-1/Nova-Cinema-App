@@ -28,12 +28,16 @@ class AuthController extends ChangeNotifier {
   /// True while the signed-in user has no active paid plan.
   bool get needsPlan => _user != null && !_user!.hasActivePlan;
 
+  /// Whether the full title may be played: by plan or by an active rental.
+  bool canWatch(String movieId) => _user?.canWatch(movieId) ?? false;
+
   /// Opens with the cached account, then refreshes it from the server in the
   /// background.
   void restoreSession() {
     _user = _service.currentUser();
-    _status =
-        _user == null ? AuthStatus.unauthenticated : AuthStatus.authenticated;
+    _status = _user == null
+        ? AuthStatus.unauthenticated
+        : AuthStatus.authenticated;
     notifyListeners();
     if (_user != null) unawaited(refreshAccount());
   }
@@ -73,16 +77,15 @@ class AuthController extends ChangeNotifier {
     required String name,
     required String email,
     required String password,
-  }) =>
-      _run(() async {
-        _user = await _service.register(
-          name: name,
-          email: email,
-          password: password,
-          country: _deviceCountry(),
-        );
-        _status = AuthStatus.authenticated;
-      });
+  }) => _run(() async {
+    _user = await _service.register(
+      name: name,
+      email: email,
+      password: password,
+      country: _deviceCountry(),
+    );
+    _status = AuthStatus.authenticated;
+  });
 
   Future<void> logout() async {
     await _service.logout();

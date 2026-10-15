@@ -11,8 +11,8 @@ import 'nova_api.dart';
 /// [NovaApi] over HTTP + JSON.
 class HttpNovaApi implements NovaApi {
   HttpNovaApi({required String baseUrl, http.Client? client})
-      : _baseUrl = baseUrl.replaceAll(RegExp(r'/$'), ''),
-        _client = client ?? http.Client();
+    : _baseUrl = baseUrl.replaceAll(RegExp(r'/$'), ''),
+      _client = client ?? http.Client();
 
   final String _baseUrl;
   final http.Client _client;
@@ -26,12 +26,16 @@ class HttpNovaApi implements NovaApi {
     required String password,
     required String country,
   }) async {
-    final json = await _send('POST', '/v1/auth/register', body: {
-      'name': name,
-      'email': email,
-      'password': password,
-      'country': country,
-    });
+    final json = await _send(
+      'POST',
+      '/v1/auth/register',
+      body: {
+        'name': name,
+        'email': email,
+        'password': password,
+        'country': country,
+      },
+    );
     return _authResult(json);
   }
 
@@ -40,10 +44,11 @@ class HttpNovaApi implements NovaApi {
     required String email,
     required String password,
   }) async {
-    final json = await _send('POST', '/v1/auth/login', body: {
-      'email': email,
-      'password': password,
-    });
+    final json = await _send(
+      'POST',
+      '/v1/auth/login',
+      body: {'email': email, 'password': password},
+    );
     return _authResult(json);
   }
 
@@ -56,13 +61,17 @@ class HttpNovaApi implements NovaApi {
     String token, {
     String? name,
     String? country,
-  }) async =>
-      AppUser.fromAccountJson(
-        await _send('PATCH', '/v1/me', token: token, body: {
-          if (name != null) 'name': name,
-          if (country != null) 'country': country,
-        }),
-      );
+  }) async => AppUser.fromAccountJson(
+    await _send(
+      'PATCH',
+      '/v1/me',
+      token: token,
+      body: {
+        if (name != null) 'name': name,
+        if (country != null) 'country': country,
+      },
+    ),
+  );
 
   @override
   Future<List<BillingCountry>> fetchCountries() async {
@@ -77,38 +86,59 @@ class HttpNovaApi implements NovaApi {
       PlanCatalog.fromJson(await _send('GET', '/v1/plans', token: token));
 
   @override
-  Future<CheckoutSession> createCheckoutSession(
+  Future<RentalOffer> fetchRentalOffer(String token) async =>
+      RentalOffer.fromJson(
+        await _send('GET', '/v1/rentals/offer', token: token),
+      );
+
+  @override
+  Future<CheckoutSession> createPlanCheckout(
     String token, {
     required String planId,
     required String idempotencyKey,
-  }) async =>
-      CheckoutSession.fromJson(
-        await _send(
-          'POST',
-          '/v1/checkout/sessions',
-          token: token,
-          body: {'planId': planId},
-          headers: {'Idempotency-Key': idempotencyKey},
-        ),
-      );
+  }) => _createCheckout(token, {'planId': planId}, idempotencyKey);
+
+  @override
+  Future<CheckoutSession> createRentalCheckout(
+    String token, {
+    required String movieId,
+    required String title,
+    required String idempotencyKey,
+  }) => _createCheckout(token, {
+    'movieId': movieId,
+    'title': title,
+  }, idempotencyKey);
+
+  Future<CheckoutSession> _createCheckout(
+    String token,
+    Map<String, dynamic> item,
+    String idempotencyKey,
+  ) async => CheckoutSession.fromJson(
+    await _send(
+      'POST',
+      '/v1/checkout/sessions',
+      token: token,
+      body: item,
+      headers: {'Idempotency-Key': idempotencyKey},
+    ),
+  );
 
   @override
   Future<CheckoutSession> fetchCheckoutSession(
     String token,
     String sessionId,
-  ) async =>
-      CheckoutSession.fromJson(
-        await _send(
-          'GET',
-          '/v1/checkout/sessions/${Uri.encodeComponent(sessionId)}',
-          token: token,
-        ),
-      );
+  ) async => CheckoutSession.fromJson(
+    await _send(
+      'GET',
+      '/v1/checkout/sessions/${Uri.encodeComponent(sessionId)}',
+      token: token,
+    ),
+  );
 
   AuthResult _authResult(Map<String, dynamic> json) => AuthResult(
-        token: json['token'] as String,
-        user: AppUser.fromAccountJson(json['account'] as Map<String, dynamic>),
-      );
+    token: json['token'] as String,
+    user: AppUser.fromAccountJson(json['account'] as Map<String, dynamic>),
+  );
 
   Future<Map<String, dynamic>> _send(
     String method,
@@ -132,7 +162,9 @@ class HttpNovaApi implements NovaApi {
         await _client.send(request).timeout(_timeout),
       );
     } on TimeoutException {
-      throw const ApiException('The server took too long to answer. Try again.');
+      throw const ApiException(
+        'The server took too long to answer. Try again.',
+      );
     } on http.ClientException {
       throw const ApiException(
         'Can’t reach the Nova Cinema server. Check your connection and try again.',
